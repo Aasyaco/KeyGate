@@ -96,30 +96,16 @@ const app = express();
 const PORT = 3000;
 
 // --- GLOBAL SECURITY HEADROOM ---
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https://github.com"],
-      connectSrc: ["'self'", "https://api.github.com", "ws:", "wss:"],
-    },
-  },
-  hsts: false, // Disabled for preview compatibility
-  referrerPolicy: { policy: "no-referrer" },
-  frameguard: false, // Disabled to allow rendering in AI Studio iframe
-  noSniff: true,
-  xssFilter: true
-}));
+// app.use(helmet({ ... })); // Temporarily disabled for thorough connectivity diagnosis
 
+app.set('trust proxy', 1);
 app.use(requestLogger);
 app.use(express.json({ limit: MAX_PAYLOAD_SIZE })); 
 app.use(cors({ origin: true, credentials: true }));
 
 // --- HEALTH CHECK ---
 app.get("/api/health", (req, res) => {
+  console.log(`[HEARTBEAT] Health check requested from ${req.ip}`);
   res.json({ status: "STABLE", timestamp: new Date().toISOString() });
 });
 
@@ -231,12 +217,20 @@ async function startServer() {
   }
 
   if (!process.env.VERCEL) {
+    console.log(`[BOOT] Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`[BOOT] VERCEL detected: ${!!process.env.VERCEL}`);
+    
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`[SEC_GATEWAY_READY] ${new Date().toISOString()} | Node Active: ${PORT}`);
+    }).on('error', (err) => {
+      console.error(`[CRITICAL_FAILURE] Server failed to bind to port ${PORT}:`, err);
     });
   }
 }
 
-startServer();
+console.log("[STARTUP] Initializing KeyGate Engine...");
+startServer().catch(err => {
+  console.error("[CRITICAL_FAILURE] Node initialization sequence aborted:", err);
+});
 
 export default app;

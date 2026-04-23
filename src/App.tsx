@@ -43,9 +43,14 @@ export default function App() {
     const checkHealth = async () => {
       try {
         const res = await fetch('/api/health');
-        if (res.ok) setNodeStatus('online');
-        else setNodeStatus('offline');
-      } catch {
+        if (res.ok) {
+          setNodeStatus('online');
+        } else {
+          console.error(`[HEALTH_CHECK] Node unhealthy. Status: ${res.status}`);
+          setNodeStatus('offline');
+        }
+      } catch (err) {
+        console.error('[HEALTH_CHECK] Node unreachable:', err);
         setNodeStatus('offline');
       }
     };
@@ -154,6 +159,11 @@ export default function App() {
             <span className="text-[9px] font-mono text-slate-400 uppercase tracking-tighter">
               NODE: {nodeStatus === 'online' ? 'STABLE' : nodeStatus === 'offline' ? 'DISCONNECTED' : 'SYNCING'}
             </span>
+            {nodeStatus === 'offline' && error && (
+              <span className="text-[8px] text-red-500/50 absolute top-full mt-1 right-0 whitespace-nowrap">
+                Check browser console for errors
+              </span>
+            )}
           </div>
         </div>
       </header>
