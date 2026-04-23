@@ -159,11 +159,6 @@ export default function App() {
             <span className="text-[9px] font-mono text-slate-400 uppercase tracking-tighter">
               NODE: {nodeStatus === 'online' ? 'STABLE' : nodeStatus === 'offline' ? 'DISCONNECTED' : 'SYNCING'}
             </span>
-            {nodeStatus === 'offline' && error && (
-              <span className="text-[8px] text-red-500/50 absolute top-full mt-1 right-0 whitespace-nowrap">
-                Check browser console for errors
-              </span>
-            )}
           </div>
         </div>
       </header>
