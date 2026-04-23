@@ -13,16 +13,18 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
+      "src": "/api(/.*)?",
       "dest": "server.ts"
     },
     {
       "src": "/assets/(.*)",
-      "dest": "/dist/assets/$1"
+      "dest": "/dist/assets/$1",
+      "check": true
     },
     {
       "src": "/(.*)",
-      "dest": "/dist/index.html"
+      "dest": "/dist/index.html",
+      "check": true
     }
   ]
 }

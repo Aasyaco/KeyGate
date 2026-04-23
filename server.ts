@@ -146,81 +146,90 @@ const apiKeyLimiter = rateLimit({
 });
 
 // --- API ROUTES ---
-
-app.get("/api/health", (req, res) => {
-  console.log(`[ROUTE_HIT] /api/health from ${req.ip}`);
-  res.json({ 
-    status: "STABLE", 
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    vercel: !!process.env.VERCEL
+const registerRoutes = () => {
+  app.get("/api", (req, res) => {
+    res.json({ message: "KeyGate API Gateway is pulse-active.", health: "/api/health" });
   });
-});
 
-app.post("/api/generate-token", globalLimiter, authenticateRequest, apiKeyLimiter, async (req, res) => {
-  const traceId = (req.headers["x-trace-id"] as string) || randomUUID();
-  
-  try {
-    const validation = TokenRequestSchema.safeParse(req.body);
-    if (!validation.success) {
-      return sendError(res, 400, ErrorCode.VALIDATION_ERROR, "Protocol validation failed.", traceId);
-    }
+  app.get("/api/health", (req, res) => {
+    console.log(`[ROUTE_HIT] /api/health from ${req.ip}`);
+    res.json({ 
+      status: "STABLE", 
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      vercel: !!process.env.VERCEL
+    });
+  });
 
-    const { app_id, client_id, private_key, installation_id, requested_ttl } = validation.data;
-    const finalAppId = app_id || client_id;
-
-    const now = Math.floor(Date.now() / 1000);
-    const payload = { iat: now - 30, exp: now + 570, iss: finalAppId };
-
-    let jwtToken: string;
+  app.post("/api/generate-token", globalLimiter, authenticateRequest, apiKeyLimiter, async (req, res) => {
+    const traceId = (req.headers["x-trace-id"] as string) || randomUUID();
+    
     try {
-      jwtToken = jwt.sign(payload, private_key, { algorithm: "RS256" });
-    } catch (err) {
-      return sendError(res, 400, ErrorCode.CRYPTO_FAILURE, "Cryptographic handshake failed.", traceId);
+      const validation = TokenRequestSchema.safeParse(req.body);
+      if (!validation.success) {
+        return sendError(res, 400, ErrorCode.VALIDATION_ERROR, "Protocol validation failed.", traceId);
+      }
+
+      const { app_id, client_id, private_key, installation_id, requested_ttl } = validation.data;
+      const finalAppId = app_id || client_id;
+
+      const now = Math.floor(Date.now() / 1000);
+      const payload = { iat: now - 30, exp: now + 570, iss: finalAppId };
+
+      let jwtToken: string;
+      try {
+        jwtToken = jwt.sign(payload, private_key, { algorithm: "RS256" });
+      } catch (err) {
+        return sendError(res, 400, ErrorCode.CRYPTO_FAILURE, "Cryptographic handshake failed.", traceId);
+      }
+
+      try {
+        const githubResponse = await axios.post(
+          `https://api.github.com/app/installations/${installation_id}/access_tokens`,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+              Accept: "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "KeyGate-Provisioner/1.0.0"
+            },
+            timeout: 8000 
+          }
+        );
+
+        return res.status(200).json({
+          token: githubResponse.data.token,
+          expires_at: githubResponse.data.expires_at,
+          expires_in: Math.floor((new Date(githubResponse.data.expires_at).getTime() - Date.now()) / 1000),
+          requested_ttl,
+          traceId,
+          timestamp: new Date().toISOString()
+        });
+
+      } catch (githubErr: any) {
+        const statusCode = githubErr.response?.status || 502;
+        return sendError(res, statusCode, ErrorCode.UPSTREAM_GH_ERROR, "Upstream gateway denied token issuance.", traceId);
+      }
+
+    } catch (err: any) {
+      return sendError(res, 500, ErrorCode.INTERNAL_GATEWAY_ERROR, "Internal node failure.", traceId);
     }
-
-    try {
-      const githubResponse = await axios.post(
-        `https://api.github.com/app/installations/${installation_id}/access_tokens`,
-        {},
-        {
-          headers: {
-            Authorization: `Bearer ${jwtToken}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "KeyGate-Provisioner/1.0.0"
-          },
-          timeout: 8000 
-        }
-      );
-
-      return res.status(200).json({
-        token: githubResponse.data.token,
-        expires_at: githubResponse.data.expires_at,
-        expires_in: Math.floor((new Date(githubResponse.data.expires_at).getTime() - Date.now()) / 1000),
-        requested_ttl,
-        traceId,
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (githubErr: any) {
-      const statusCode = githubErr.response?.status || 502;
-      return sendError(res, statusCode, ErrorCode.UPSTREAM_GH_ERROR, "Upstream gateway denied token issuance.", traceId);
-    }
-
-  } catch (err: any) {
-    return sendError(res, 500, ErrorCode.INTERNAL_GATEWAY_ERROR, "Internal node failure.", traceId);
-  }
-});
+  });
+};
 
 // --- CORE INITIALIZATION ---
 async function startBootstrap() {
   const isVercel = !!process.env.VERCEL;
   const isProd = process.env.NODE_ENV === "production";
 
+  console.log(`[BOOT] Environment: ${isProd ? 'Production' : 'Development'} (Vercel: ${isVercel})`);
+
+  // Register API routes first
+  registerRoutes();
+
   if (!isVercel && !isProd) {
     try {
-      // Dynamic import to avoid vite in production bundle
       const { createServer } = await import("vite");
       const vite = await createServer({
         server: { middlewareMode: true },
@@ -233,18 +242,15 @@ async function startBootstrap() {
     }
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    console.log(`[BOOT] Serving Static Content from: ${distPath}`);
     app.use(express.static(distPath));
-    // SPA fallback
+    
     app.get("*", (req, res, next) => {
-      // Don't handle /api routes here
-      if (req.path.startsWith('/api')) {
-        return next();
-      }
+      if (req.path.startsWith('/api')) return next();
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  // Final Catch-all Logger for Debugging 404s
   app.use((req, res) => {
     if (res.headersSent) return;
     console.warn(`[NOT_FOUND] 404 on ${req.method} ${req.path}`);
@@ -263,17 +269,8 @@ async function startBootstrap() {
   }
 }
 
-// Only run bootstrap if not in Vercel, or call it but don't listen
-if (!process.env.VERCEL) {
-  startBootstrap().catch(err => {
-    console.error("[CRITICAL] Startup sequence failure:", err);
-  });
-} else {
-  // In Vercel, we need the routes to be registered synchronously if possible, 
-  // or at least before the export is used.
-  // Since we are using express.static and SPA fallback, we should define them.
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
-}
+startBootstrap().catch(err => {
+  console.error("[CRITICAL] Startup sequence failure:", err);
+});
 
 export default app;
