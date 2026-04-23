@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import jwt from "jsonwebtoken";
@@ -69,7 +68,7 @@ const authenticateRequest = (req: express.Request, res: express.Response, next: 
   const expectedHash = process.env.KEYGATE_API_KEY_HASH;
 
   if (!expectedHash) {
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
       return sendError(res, 403, ErrorCode.AUTH_FAILURE, "Gateway security misconfigured: Master key missing.", traceId);
     }
     return next(); 
@@ -153,7 +152,8 @@ app.get("/api/health", (req, res) => {
   res.json({ 
     status: "STABLE", 
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    vercel: !!process.env.VERCEL
   });
 });
 
@@ -215,11 +215,14 @@ app.post("/api/generate-token", globalLimiter, authenticateRequest, apiKeyLimite
 
 // --- CORE INITIALIZATION ---
 async function startBootstrap() {
-  console.log(`[BOOT] Initializing KeyGate Node on Port ${PORT}...`);
+  const isVercel = !!process.env.VERCEL;
+  const isProd = process.env.NODE_ENV === "production";
 
-  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  if (!isVercel && !isProd) {
     try {
-      const vite = await createViteServer({
+      // Dynamic import to avoid vite in production bundle
+      const { createServer } = await import("vite");
+      const vite = await createServer({
         server: { middlewareMode: true },
         appType: "spa",
       });
@@ -231,29 +234,46 @@ async function startBootstrap() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    // SPA fallback
+    app.get("*", (req, res, next) => {
+      // Don't handle /api routes here
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
+  // Final Catch-all Logger for Debugging 404s
   app.use((req, res) => {
+    if (res.headersSent) return;
     console.warn(`[NOT_FOUND] 404 on ${req.method} ${req.path}`);
     res.status(404).json({
       code: "ROUTE_NOT_FOUND",
       message: `The biological path ${req.path} does not exist.`,
+      traceId: req.headers["x-trace-id"] || "N/A",
       timestamp: new Date().toISOString()
     });
   });
 
-  if (!process.env.VERCEL) {
+  if (!isVercel) {
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`[SEC_GATEWAY_READY] Node listening on 0.0.0.0:${PORT}`);
+      console.log(`[BOOT] Node listening on 0.0.0.0:${PORT}`);
     });
   }
 }
 
-startBootstrap().catch(err => {
-  console.error("[CRITICAL] Startup sequence failure:", err);
-});
+// Only run bootstrap if not in Vercel, or call it but don't listen
+if (!process.env.VERCEL) {
+  startBootstrap().catch(err => {
+    console.error("[CRITICAL] Startup sequence failure:", err);
+  });
+} else {
+  // In Vercel, we need the routes to be registered synchronously if possible, 
+  // or at least before the export is used.
+  // Since we are using express.static and SPA fallback, we should define them.
+  const distPath = path.join(process.cwd(), "dist");
+  app.use(express.static(distPath));
+}
 
 export default app;
