@@ -1,0 +1,29 @@
+                                  KEYGATE SOFTWARE LICENSE
+                                Version 1.0 (Enterprise)
+
+1. PROPRIETARY RIGHTS AND GRANT OF LICENSE
+KeyGate (the "Software") is the intellectual property of KeyGate Contributors (the "Licensor"). Subject to these terms, Licensor grants you a non-exclusive, non-transferable, non-sublicensable license to use the Software solely for internal business purposes or personal development.
+
+2. RESTRICTIONS
+You are strictly prohibited from:
+(a) Commercial Repackaging: You may not resell, lease, or distribute the Software as a standalone service or as part of a competing token-provisioning product.
+(b) Reverse Engineering: You may not decompile, disassemble, or reverse engineer the Software, except to the extent permitted by law.
+(c) Unauthorized Redistribution: You may not redistribute the Source Code or Object Code without explicit written permission from the Licensor.
+(d) Public API Clones: You are forbidden from deploying a modified version of this Software as a public API service that replicates the core functionality of KeyGate.
+
+3. ATTRIBUTION
+All copies of the Software or significant portions thereof must retain all copyright notices and this license text. Any public-facing interface using the Software must include a clear "Powered by KeyGate" attribution.
+
+4. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU.
+
+5. LIMITATION OF LIABILITY
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+6. SECURITY RESPONSIBILITY
+KeyGate is a tool for managing cryptographic secrets. You acknowledge that you are solely responsible for the security of your private keys and the environment in which the Software is deployed. Licensor is not liable for data breaches, leaked credentials, or unauthorized access resulting from improper configuration or user negligence.
+
+7. TERMINATION
+This license terminates automatically if you violate any of its terms. Upon termination, you must cease all use of the Software and destroy all copies in your possession.
+
+Copyright © 2026 KeyGate Contributors. All Rights Reserved.

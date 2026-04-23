@@ -1,0 +1,6 @@
+{
+  "name": "KeyGate",
+  "description": "Secure, industrial-grade provisioning for GitHub App installation access tokens. Processed in-memory, never stored.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
