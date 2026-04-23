@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import jwt from "jsonwebtoken";
-import axios from "axios";
+import axios from a"axios";
 import { z } from "zod";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
@@ -92,129 +92,129 @@ const authenticateRequest = (req: express.Request, res: express.Response, next: 
   }
 };
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  // --- GLOBAL SECURITY HEADROOM ---
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https://github.com"],
-        connectSrc: ["'self'", "https://api.github.com", "ws:", "wss:"],
-      },
+// --- GLOBAL SECURITY HEADROOM ---
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https://github.com"],
+      connectSrc: ["'self'", "https://api.github.com", "ws:", "wss:"],
     },
-    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
-    referrerPolicy: { policy: "no-referrer" },
-    frameguard: { action: "deny" },
-    noSniff: true,
-    xssFilter: true
-  }));
+  },
+  hsts: false, // Disabled for preview compatibility
+  referrerPolicy: { policy: "no-referrer" },
+  frameguard: false, // Disabled to allow rendering in AI Studio iframe
+  noSniff: true,
+  xssFilter: true
+}));
 
-  app.use(requestLogger);
-  app.use(express.json({ limit: MAX_PAYLOAD_SIZE })); 
-  app.use(cors({ origin: true, credentials: true }));
+app.use(requestLogger);
+app.use(express.json({ limit: MAX_PAYLOAD_SIZE })); 
+app.use(cors({ origin: true, credentials: true }));
 
-  // --- HEALTH CHECK ---
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "STABLE", timestamp: new Date().toISOString() });
-  });
+// --- HEALTH CHECK ---
+app.get("/api/health", (req, res) => {
+  res.json({ status: "STABLE", timestamp: new Date().toISOString() });
+});
 
-  // --- MULTI-LAYER RATE LIMITING ---
-  const globalLimiter = rateLimit({
-    windowMs: 60 * 1000, 
-    max: 10, // 10 requests per minute per IP
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res, _next, options) => {
-      const traceId = (req.headers["x-trace-id"] as string) || "N/A";
-      sendError(res, options.statusCode, ErrorCode.RATE_LIMIT_ERROR, options.message.error, traceId);
-    },
-    message: { error: "Security throttle engaged: IP-based burst detected." }
-  });
+// --- MULTI-LAYER RATE LIMITING ---
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000, 
+  max: 10, // 10 requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, _next, options) => {
+    const traceId = (req.headers["x-trace-id"] as string) || "N/A";
+    sendError(res, options.statusCode, ErrorCode.RATE_LIMIT_ERROR, options.message.error, traceId);
+  },
+  message: { error: "Security throttle engaged: IP-based burst detected." }
+});
 
-  const apiKeyLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,
-    max: 100, // 100 requests per hour per trace (effectively per session)
-    keyGenerator: (req) => {
-      // Identity is guaranteed by the authenticateRequest middleware preceding this
-      return (req.headers[API_KEY_HEADER] as string) || "unauthenticated";
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res, _next, options) => {
-      const traceId = (req.headers["x-trace-id"] as string) || "N/A";
-      sendError(res, options.statusCode, ErrorCode.RATE_LIMIT_ERROR, options.message.error, traceId);
-    },
-    message: { error: "Security throttle engaged: API-key usage quota exceeded." }
-  });
+const apiKeyLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 100, // 100 requests per hour per trace (effectively per session)
+  keyGenerator: (req) => {
+    // Identity is guaranteed by the authenticateRequest middleware preceding this
+    return (req.headers[API_KEY_HEADER] as string) || "unauthenticated";
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, _next, options) => {
+    const traceId = (req.headers["x-trace-id"] as string) || "N/A";
+    sendError(res, options.statusCode, ErrorCode.RATE_LIMIT_ERROR, options.message.error, traceId);
+  },
+  message: { error: "Security throttle engaged: API-key usage quota exceeded." }
+});
 
-  // --- API HANDLER (PROTECTED) ---
-  app.post("/api/generate-token", globalLimiter, authenticateRequest, apiKeyLimiter, async (req, res) => {
-    const traceId = (req.headers["x-trace-id"] as string) || randomUUID();
-    
-    try {
-      const validation = TokenRequestSchema.safeParse(req.body);
-      if (!validation.success) {
-        return sendError(res, 400, ErrorCode.VALIDATION_ERROR, "Protocol validation failed. Input parameters do not meet safety constraints.", traceId);
-      }
-
-      const { app_id, client_id, private_key, installation_id, requested_ttl } = validation.data;
-      const finalAppId = app_id || client_id;
-
-      // Cryptographic Operations
-      const now = Math.floor(Date.now() / 1000);
-      const payload = { iat: now - 30, exp: now + 570, iss: finalAppId };
-
-      let jwtToken: string;
-      try {
-        jwtToken = jwt.sign(payload, private_key, { algorithm: "RS256" });
-      } catch (err) {
-        return sendError(res, 400, ErrorCode.CRYPTO_FAILURE, "Cryptographic handshake failed: Identity signature rejected.", traceId);
-      }
-
-      // Upstream Exchange
-      try {
-        const githubResponse = await axios.post(
-          `https://api.github.com/app/installations/${installation_id}/access_tokens`,
-          {},
-          {
-            headers: {
-              Authorization: `Bearer ${jwtToken}`,
-              Accept: "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28",
-              "User-Agent": "KeyGate-Provisioner/1.0.0"
-            },
-            timeout: 8000 
-          }
-        );
-
-        // Immediate cleanup of sensitive local scope
-        jwtToken = ""; 
-
-        return res.status(200).json({
-          token: githubResponse.data.token,
-          expires_at: githubResponse.data.expires_at,
-          expires_in: Math.floor((new Date(githubResponse.data.expires_at).getTime() - Date.now()) / 1000),
-          requested_ttl,
-          traceId,
-          timestamp: new Date().toISOString()
-        });
-
-      } catch (githubErr: any) {
-        const statusCode = githubErr.response?.status || 502;
-        return sendError(res, statusCode, ErrorCode.UPSTREAM_GH_ERROR, "Authority Handshake Failed: Upstream gateway denied token issuance.", traceId);
-      }
-
-    } catch (err: any) {
-      return sendError(res, 500, ErrorCode.INTERNAL_GATEWAY_ERROR, "A critical internal node failure occurred.", traceId);
+// --- API HANDLER (PROTECTED) ---
+app.post("/api/generate-token", globalLimiter, authenticateRequest, apiKeyLimiter, async (req, res) => {
+  const traceId = (req.headers["x-trace-id"] as string) || randomUUID();
+  
+  try {
+    const validation = TokenRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return sendError(res, 400, ErrorCode.VALIDATION_ERROR, "Protocol validation failed. Input parameters do not meet safety constraints.", traceId);
     }
-  });
 
+    const { app_id, client_id, private_key, installation_id, requested_ttl } = validation.data;
+    const finalAppId = app_id || client_id;
+
+    // Cryptographic Operations
+    const now = Math.floor(Date.now() / 1000);
+    const payload = { iat: now - 30, exp: now + 570, iss: finalAppId };
+
+    let jwtToken: string;
+    try {
+      jwtToken = jwt.sign(payload, private_key, { algorithm: "RS256" });
+    } catch (err) {
+      return sendError(res, 400, ErrorCode.CRYPTO_FAILURE, "Cryptographic handshake failed: Identity signature rejected.", traceId);
+    }
+
+    // Upstream Exchange
+    try {
+      const githubResponse = await axios.post(
+        `https://api.github.com/app/installations/${installation_id}/access_tokens`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${jwtToken}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "KeyGate-Provisioner/1.0.0"
+          },
+          timeout: 8000 
+        }
+      );
+
+      // Immediate cleanup of sensitive local scope
+      jwtToken = ""; 
+
+      return res.status(200).json({
+        token: githubResponse.data.token,
+        expires_at: githubResponse.data.expires_at,
+        expires_in: Math.floor((new Date(githubResponse.data.expires_at).getTime() - Date.now()) / 1000),
+        requested_ttl,
+        traceId,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (githubErr: any) {
+      const statusCode = githubErr.response?.status || 502;
+      return sendError(res, statusCode, ErrorCode.UPSTREAM_GH_ERROR, "Authority Handshake Failed: Upstream gateway denied token issuance.", traceId);
+    }
+
+  } catch (err: any) {
+    return sendError(res, 500, ErrorCode.INTERNAL_GATEWAY_ERROR, "A critical internal node failure occurred.", traceId);
+  }
+});
+
+async function startServer() {
   // --- VITE MIDDLEWARE ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -230,9 +230,13 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[SEC_GATEWAY_READY] ${new Date().toISOString()} | Node Active: ${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`[SEC_GATEWAY_READY] ${new Date().toISOString()} | Node Active: ${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;
